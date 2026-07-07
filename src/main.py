@@ -1,1 +1,1 @@
-print("Teste")
+print("Sistema Kanban Inicializado")
