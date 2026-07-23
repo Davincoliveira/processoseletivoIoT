@@ -1,4 +1,4 @@
-from machine import Pin
+from machine import Pin, enable_irq, disable_irq
 import time
 
 HX711_DOUT_PIN = 4
@@ -14,26 +14,76 @@ STATE_REFILLED = 2
 STATE_ANOMALY = 3
 
 
-def read_hx711(dout, clk):
-    timeout = 100
-    while dout.value() == 1:
-        timeout -= 1
-        if timeout <= 0:
+class HX711:
+    def __init__(self, clock_pin, data_pin, gain=128):
+        self.clock = clock_pin
+        self.data = data_pin
+        self.clock.value(False)
+        self.GAIN = 0
+        self.OFFSET = 0
+        self.SCALE = 1
+        self.set_gain(gain)
+
+    def set_gain(self, gain):
+        if gain == 128:
+            self.GAIN = 1
+        elif gain == 64:
+            self.GAIN = 3
+        elif gain == 32:
+            self.GAIN = 2
+        self._read_raw()
+
+    def _wait_ready(self):
+        for _ in range(100):
+            if not self.data.value():
+                return True
+            time.sleep_ms(1)
+        return False
+
+    def _read_raw(self):
+        if not self._wait_ready():
             return 0
 
-    value = 0
-    for _ in range(24):
-        clk.value(1)
-        value = (value << 1) | dout.value()
-        clk.value(0)
+        result = 0
+        for _ in range(24):
+            result = (result << 1) | self.data.value()
+            self.clock.value(True)
+            time.sleep_us(1)
+            self.clock.value(False)
+            time.sleep_us(1)
 
-    clk.value(1)
-    clk.value(0)
+        for _ in range(self.GAIN):
+            self.clock.value(True)
+            time.sleep_us(1)
+            self.clock.value(False)
+            time.sleep_us(1)
 
-    if value >= 0x800000:
-        value -= 0x1000000
+        if result > 0x7FFFFF:
+            result -= 0x1000000
 
-    return value
+        return result
+
+    def read(self):
+        return self._read_raw()
+
+    def tare(self, times=15):
+        sum_val = 0
+        for _ in range(times):
+            sum_val += self.read()
+        self.OFFSET = sum_val / times
+        return self.OFFSET
+
+    def set_offset(self, offset):
+        self.OFFSET = offset
+
+    def get_value(self):
+        return self.read() - self.OFFSET
+
+    def get_units(self):
+        return self.get_value() / self.SCALE
+
+    def set_scale(self, scale):
+        self.SCALE = scale
 
 
 def update_state(load_g):
@@ -74,11 +124,15 @@ clk = Pin(HX711_CLK_PIN, Pin.OUT, value=0)
 
 time.sleep_ms(100)
 
+hx711 = HX711(clk, dout, gain=128)
+hx711.set_offset(0)
+hx711.set_scale(1)
+
 print("Sistema Kanban Inicializado")
 
 state = STATE_ANOMALY
 msg_printed = False
 
 while True:
-    raw = read_hx711(dout, clk)
+    raw = hx711.read()
     update_state(raw)
