@@ -133,6 +133,12 @@ print("Sistema Kanban Inicializado")
 state = STATE_ANOMALY
 msg_printed = False
 
+# while True:
+#     raw = hx711.read()
+#     update_state(raw)
+
 while True:
     raw = hx711.read()
+    print("RAW =", raw)
     update_state(raw)
+    time.sleep_ms(100)
