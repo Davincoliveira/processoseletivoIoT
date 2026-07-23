@@ -99,9 +99,9 @@ def update_state(load_g):
         state = STATE_REFILLED
     elif prev_state == STATE_REFILLED:
         state = STATE_REGULAR
-    elif prev_state not in (STATE_RESTOCK_ALERT, STATE_ANOMALY):
+    else:
         state = STATE_REGULAR
-
+        
     if state != prev_state:
         msg_printed = False
 
@@ -130,7 +130,7 @@ hx711.set_scale(1)
 
 print("Sistema Kanban Inicializado")
 
-state = STATE_ANOMALY
+state = STATE_REGULAR
 msg_printed = False
 
 # while True:
@@ -139,6 +139,9 @@ msg_printed = False
 
 while True:
     raw = hx711.read()
-    print("RAW =", raw)
-    update_state(raw)
-    time.sleep_ms(100)
+
+    load_g = int(raw / 210)
+
+    update_state(load_g)
+
+    time.sleep_ms(20)
