@@ -49,7 +49,7 @@ def update_state(load_g):
         state = STATE_REFILLED
     elif prev_state == STATE_REFILLED:
         state = STATE_REGULAR
-    elif prev_state not in (STATE_RESTOCK_ALERT, STATE_ANOMALY):
+    else:
         state = STATE_REGULAR
 
     if state != prev_state:
