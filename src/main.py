@@ -1,4 +1,4 @@
-from machine import Pin, enable_irq, disable_irq
+from machine import Pin
 import time
 
 HX711_DOUT_PIN = 4
@@ -14,138 +14,30 @@ STATE_REFILLED = 2
 STATE_ANOMALY = 3
 
 
-class HX711:
-    def __init__(self, clock_pin, data_pin, gain=128):
-        self.clock = clock_pin
-        self.data = data_pin
-        self.clock.value(False)
-        self.GAIN = 0
-        self.OFFSET = 0
-        self.SCALE = 1
-        self.set_gain(gain)
-
-    def set_gain(self, gain):
-        if gain == 128:
-            self.GAIN = 1
-        elif gain == 64:
-            self.GAIN = 3
-        elif gain == 32:
-            self.GAIN = 2
-        self._read_raw()
-
-    def _wait_ready(self):
-        for _ in range(100):
-            if not self.data.value():
-                return True
-            time.sleep_ms(1)
-        return False
-
-    def _read_raw(self):
-        if not self._wait_ready():
+def read_hx711(dout, clk):
+    timeout = 100
+    while dout.value() == 1:
+        timeout -= 1
+        if timeout <= 0:
             return 0
 
-        result = 0
-        for _ in range(24):
-            result = (result << 1) | self.data.value()
-            self.clock.value(True)
-            time.sleep_us(1)
-            self.clock.value(False)
-            time.sleep_us(1)
+    value = 0
+    for _ in range(24):
+        clk.value(1)
+        value = (value << 1) | dout.value()
+        clk.value(0)
 
-        for _ in range(self.GAIN):
-            self.clock.value(True)
-            time.sleep_us(1)
-            self.clock.value(False)
-            time.sleep_us(1)
+    clk.value(1)
+    clk.value(0)
 
-        if result > 0x7FFFFF:
-            result -= 0x1000000
+    if value >= 0x800000:
+        value -= 0x1000000
 
-        return result
+    return value
 
-    def read(self):
-        return self._read_raw()
-
-    def tare(self, times=15):
-        sum_val = 0
-        for _ in range(times):
-            sum_val += self.read()
-        self.OFFSET = sum_val / times
-        return self.OFFSET
-
-    def set_offset(self, offset):
-        self.OFFSET = offset
-
-    def get_value(self):
-        return self.read() - self.OFFSET
-
-    def get_units(self):
-        return self.get_value() / self.SCALE
-
-    def set_scale(self, scale):
-        self.SCALE = scale
-
-
-# def update_state(load_g):
-#     global state, msg_printed
-
-#     prev_state = state
-
-#     if load_g == STOCK_ANOMALY_G:
-#         state = STATE_ANOMALY
-#     elif load_g <= STOCK_MINIMUM_G:
-#         state = STATE_RESTOCK_ALERT
-#     elif load_g >= STOCK_FULL_G and prev_state == STATE_RESTOCK_ALERT:
-#         state = STATE_REFILLED
-#     elif prev_state == STATE_REFILLED:
-#         state = STATE_REGULAR
-#     else:
-#         state = STATE_REGULAR
-        
-#     if state != prev_state:
-#         msg_printed = False
-
-#     if state == STATE_ANOMALY and not msg_printed:
-#         print("ALERTA: Caixa ausente ou erro de calibração no sensor HX711!")
-#         msg_printed = True
-#     elif state == STATE_RESTOCK_ALERT and not msg_printed:
-#         print("Evento de reposição disparado! Caixa vazia detectada.")
-#         msg_printed = True
-#     elif state == STATE_REFILLED and not msg_printed:
-#         print("Abastecimento concluído. Caixa cheia.")
-#         msg_printed = True
-#     elif state == STATE_REGULAR:
-#         print("Status: Estoque Regular ({}g)".format(load_g))
-#         msg_printed = False
 
 def update_state(load_g):
     global state, msg_printed
-    global pending_load, pending_count
-
-    # Leituras transitórias do HX711 podem gerar valores incorretos.
-    # Exigimos duas leituras consecutivas iguais para confirmar
-    # valores críticos ou anômalos.
-    if load_g == STOCK_ANOMALY_G:
-        if pending_load == STOCK_ANOMALY_G:
-            pending_count += 1
-        else:
-            pending_load = STOCK_ANOMALY_G
-            pending_count = 1
-        if pending_count < 2:
-            return
-
-    elif load_g <= STOCK_MINIMUM_G:
-        if pending_load == load_g:
-            pending_count += 1
-        else:
-            pending_load = load_g
-            pending_count = 1
-        if pending_count < 2:
-            return
-
-    else:
-        pending_load = None
-        pending_count = 0
 
     prev_state = state
 
@@ -157,23 +49,21 @@ def update_state(load_g):
         state = STATE_REFILLED
     elif prev_state == STATE_REFILLED:
         state = STATE_REGULAR
-    else:
+    elif prev_state not in (STATE_RESTOCK_ALERT, STATE_ANOMALY):
         state = STATE_REGULAR
+
     if state != prev_state:
         msg_printed = False
 
     if state == STATE_ANOMALY and not msg_printed:
         print("ALERTA: Caixa ausente ou erro de calibração no sensor HX711!")
         msg_printed = True
-
     elif state == STATE_RESTOCK_ALERT and not msg_printed:
         print("Evento de reposição disparado! Caixa vazia detectada.")
         msg_printed = True
-
     elif state == STATE_REFILLED and not msg_printed:
         print("Abastecimento concluído. Caixa cheia.")
         msg_printed = True
-
     elif state == STATE_REGULAR:
         print("Status: Estoque Regular ({}g)".format(load_g))
         msg_printed = False
@@ -184,27 +74,11 @@ clk = Pin(HX711_CLK_PIN, Pin.OUT, value=0)
 
 time.sleep_ms(100)
 
-hx711 = HX711(clk, dout, gain=128)
-hx711.set_offset(0)
-hx711.set_scale(1)
-
 print("Sistema Kanban Inicializado")
 
-state = STATE_REGULAR
+state = STATE_ANOMALY
 msg_printed = False
 
-# while True:
-#     raw = hx711.read()
-#     update_state(raw)
-
-pending_load = None
-pending_count = 0
-
 while True:
-    raw = hx711.read()
-
-    load_g = int(raw / 210)
-
-    update_state(load_g)
-
-    time.sleep_ms(20)
+    raw = read_hx711(dout, clk)
+    update_state(raw)
