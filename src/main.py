@@ -86,8 +86,66 @@ class HX711:
         self.SCALE = scale
 
 
+# def update_state(load_g):
+#     global state, msg_printed
+
+#     prev_state = state
+
+#     if load_g == STOCK_ANOMALY_G:
+#         state = STATE_ANOMALY
+#     elif load_g <= STOCK_MINIMUM_G:
+#         state = STATE_RESTOCK_ALERT
+#     elif load_g >= STOCK_FULL_G and prev_state == STATE_RESTOCK_ALERT:
+#         state = STATE_REFILLED
+#     elif prev_state == STATE_REFILLED:
+#         state = STATE_REGULAR
+#     else:
+#         state = STATE_REGULAR
+        
+#     if state != prev_state:
+#         msg_printed = False
+
+#     if state == STATE_ANOMALY and not msg_printed:
+#         print("ALERTA: Caixa ausente ou erro de calibração no sensor HX711!")
+#         msg_printed = True
+#     elif state == STATE_RESTOCK_ALERT and not msg_printed:
+#         print("Evento de reposição disparado! Caixa vazia detectada.")
+#         msg_printed = True
+#     elif state == STATE_REFILLED and not msg_printed:
+#         print("Abastecimento concluído. Caixa cheia.")
+#         msg_printed = True
+#     elif state == STATE_REGULAR:
+#         print("Status: Estoque Regular ({}g)".format(load_g))
+#         msg_printed = False
+
 def update_state(load_g):
     global state, msg_printed
+    global pending_load, pending_count
+
+    # Leituras transitórias do HX711 podem gerar valores incorretos.
+    # Exigimos duas leituras consecutivas iguais para confirmar
+    # valores críticos ou anômalos.
+    if load_g == STOCK_ANOMALY_G:
+        if pending_load == STOCK_ANOMALY_G:
+            pending_count += 1
+        else:
+            pending_load = STOCK_ANOMALY_G
+            pending_count = 1
+        if pending_count < 2:
+            return
+
+    elif load_g <= STOCK_MINIMUM_G:
+        if pending_load == load_g:
+            pending_count += 1
+        else:
+            pending_load = load_g
+            pending_count = 1
+        if pending_count < 2:
+            return
+
+    else:
+        pending_load = None
+        pending_count = 0
 
     prev_state = state
 
@@ -101,19 +159,21 @@ def update_state(load_g):
         state = STATE_REGULAR
     else:
         state = STATE_REGULAR
-        
     if state != prev_state:
         msg_printed = False
 
     if state == STATE_ANOMALY and not msg_printed:
         print("ALERTA: Caixa ausente ou erro de calibração no sensor HX711!")
         msg_printed = True
+
     elif state == STATE_RESTOCK_ALERT and not msg_printed:
         print("Evento de reposição disparado! Caixa vazia detectada.")
         msg_printed = True
+
     elif state == STATE_REFILLED and not msg_printed:
         print("Abastecimento concluído. Caixa cheia.")
         msg_printed = True
+
     elif state == STATE_REGULAR:
         print("Status: Estoque Regular ({}g)".format(load_g))
         msg_printed = False
@@ -136,6 +196,9 @@ msg_printed = False
 # while True:
 #     raw = hx711.read()
 #     update_state(raw)
+
+pending_load = None
+pending_count = 0
 
 while True:
     raw = hx711.read()
