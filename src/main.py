@@ -99,9 +99,9 @@ def update_state(load_g):
         state = STATE_REFILLED
     elif prev_state == STATE_REFILLED:
         state = STATE_REGULAR
-    else: 
+    else:
         state = STATE_REGULAR
-
+        
     if state != prev_state:
         msg_printed = False
 
@@ -137,17 +137,11 @@ msg_printed = False
 #     raw = hx711.read()
 #     update_state(raw)
 
-last_load = STOCK_FULL_G
-
 while True:
     raw = hx711.read()
+
     load_g = int(raw / 210)
-    if load_g < 0:
-        continue
 
-    if 0 < load_g < 100 and last_load > STOCK_MINIMUM_G:
-        continue
-
-    last_load = load_g 
     update_state(load_g)
+
     time.sleep_ms(20)
